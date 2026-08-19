@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enriquecimento Cadastral de CNPJ — Rede Américas</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --roxo:#642277;
+    --roxo-escuro:#4a1a59;
+    --verde:#76C42B;
+    --lilas:#DCA9D9;
+    --lilas-claro:#f4eaf6;
+    --texto:#2b2530;
+    --texto-sutil:#6b6270;
+    --borda:#e3d9e6;
+    --branco:#ffffff;
+    --verde-bg:#e6f6d9; --verde-tx:#3f7a15;
+    --vermelho-bg:#fbe1e4; --vermelho-tx:#a13140;
+    --amarelo-bg:#fdf1d0; --amarelo-tx:#8a6d17;
+    --cinza-bg:#eee9ef; --cinza-tx:#6b6270;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0; background:#faf7fb; color:var(--texto);
+    font-family:"Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header{
+    background:linear-gradient(135deg, var(--roxo) 0%, var(--roxo-escuro) 100%);
+    color:#fff; padding:28px 32px 24px;
+  }
+  header .eyebrow{
+    font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--lilas); font-weight:600; margin-bottom:6px;
+  }
+  header h1{ margin:0 0 6px; font-size:26px; font-weight:700; }
+  header p{ margin:0; color:#e9d9ec; font-size:14px; max-width:760px; line-height:1.5;}
+  main{ max-width:1100px; margin:0 auto; padding:28px 24px 60px; }
+  .card{
+    background:var(--branco); border:1px solid var(--borda); border-radius:12px;
+    padding:22px 24px; margin-bottom:22px; box-shadow:0 1px 3px rgba(100,34,119,.06);
+  }
+  .card h2{
+    margin:0 0 4px; font-size:16px; color:var(--roxo-escuro); display:flex; align-items:center; gap:8px;
+  }
+  .card h2 .step{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:22px; height:22px; border-radius:50%; background:var(--verde);
+    color:#fff; font-size:12px; font-weight:700;
+  }
+  .card .hint{ font-size:13px; color:var(--texto-sutil); margin:0 0 14px; line-height:1.5;}
+  textarea{
+    width:100%; min-height:110px; border:1px solid var(--borda); border-radius:8px;
+    padding:10px 12px; font-family:"Consolas", monospace; font-size:13px; resize:vertical;
+    color:var(--texto);
+  }
+  textarea:focus, input:focus{ outline:2px solid var(--verde); outline-offset:1px; }
+  .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-top:12px; }
+  .filebtn{
+    display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+    background:var(--lilas-claro); border:1px dashed var(--roxo); color:var(--roxo-escuro);
+    padding:9px 14px; border-radius:8px; font-size:13px; font-weight:600;
+  }
+  .filebtn input{ display:none; }
+  #fileName{ font-size:13px; color:var(--texto-sutil); }
+  #selectColuna{
+    border:1px solid var(--borda); border-radius:8px; padding:7px 10px;
+    font-size:13px; color:var(--texto); background:#fff; font-weight:600;
+  }
+  #selectColuna:focus{ outline:2px solid var(--verde); outline-offset:1px; }
+  button.primary{
+    background:var(--roxo); color:#fff; border:none; padding:11px 22px;
+    border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;
+    transition:background .15s ease;
+  }
+  button.primary:hover{ background:var(--roxo-escuro); }
+  button.primary:disabled{ background:#c9bccf; cursor:not-allowed; }
+  button.secondary{
+    background:#fff; color:var(--roxo); border:1.5px solid var(--roxo);
+    padding:9px 18px; border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer;
+  }
+  button.secondary:hover{ background:var(--lilas-claro); }
+  button.secondary:disabled{ opacity:.45; cursor:not-allowed; }
+  .count-pill{
+    display:inline-block; background:var(--lilas-claro); color:var(--roxo-escuro);
+    font-size:13px; font-weight:600; padding:5px 12px; border-radius:999px;
+  }
+  .progress-wrap{ margin-top:14px; display:none; }
+  .progress-bar-bg{ background:#eee2ef; border-radius:999px; height:10px; overflow:hidden; }
+  .progress-bar{ background:linear-gradient(90deg, var(--verde), #5aa622); height:100%; width:0%; transition:width .2s ease; }
+  .progress-label{ font-size:12.5px; color:var(--texto-sutil); margin-top:6px; }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  thead th{
+    background:var(--roxo); color:#fff; text-align:left; padding:9px 10px;
+    position:sticky; top:0; white-space:nowrap; font-weight:600;
+  }
+  tbody td{ padding:8px 10px; border-bottom:1px solid var(--borda); white-space:nowrap; }
+  tbody tr:hover{ background:var(--lilas-claro); }
+  .table-scroll{ overflow:auto; max-height:520px; border:1px solid var(--borda); border-radius:8px; margin-top:14px; }
+  .badge{ padding:3px 9px; border-radius:999px; font-size:11.5px; font-weight:700; display:inline-block; }
+  .badge.ativa{ background:var(--verde-bg); color:var(--verde-tx); }
+  .badge.baixada, .badge.inapta, .badge.nula{ background:var(--vermelho-bg); color:var(--vermelho-tx); }
+  .badge.suspensa{ background:var(--amarelo-bg); color:var(--amarelo-tx); }
+  .badge.erro, .badge.naoencontrado, .badge.invalido{ background:var(--cinza-bg); color:var(--cinza-tx); }
+  .badge.mei{ background:#e0f0fa; color:#1a6a94; }
+  .badge.simples{ background:var(--verde-bg); color:var(--verde-tx); }
+  .badge.naoOptante{ background:var(--lilas-claro); color:var(--roxo-escuro); }
+  footer{ text-align:center; padding:24px; font-size:12px; color:var(--texto-sutil); }
+  .empty-state{ padding:30px; text-align:center; color:var(--texto-sutil); font-size:13.5px; }
+  .disclaimer{
+    font-size:12px; color:var(--texto-sutil); background:var(--lilas-claro);
+    border-left:3px solid var(--roxo); padding:10px 14px; border-radius:0 6px 6px 0; margin-top:14px; line-height:1.5;
+  }
+  .actions-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; align-items:center; justify-content:space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Reforma Tributária · Rede Américas</div>
+  <h1>Enriquecimento Cadastral de CNPJ</h1>
+  <p>Cole ou envie uma lista de CNPJs e traga automaticamente razão social, situação cadastral, CNAE, endereço e demais dados públicos da Receita Federal</p>
+</header>
+
+<main>
+
+  <div class="card">
+    <h2><span class="step">1</span> Informe os CNPJs</h2>
+    <p class="hint">Cole uma lista (um CNPJ por linha, ou separados por vírgula/ponto e vírgula) ou envie uma planilha .xlsx / .csv. Pontuação é ignorada automaticamente.</p>
+    <textarea id="txtCnpjs" placeholder="Ex:&#10;11.222.333/0001-81&#10;44444444000191&#10;05.914.650/0001-66"></textarea>
+    <div class="row">
+      <label class="filebtn">
+        📎 Enviar planilha (.xlsx / .csv)
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+      </label>
+      <span id="fileName"></span>
+      <button class="secondary" id="btnLimpar" type="button">Limpar</button>
+      <span style="flex:1"></span>
+      <span class="count-pill" id="countPill">0 CNPJ(s) detectado(s)</span>
+    </div>
+    <div class="row" id="colunaRow" style="display:none;">
+      <label for="selectColuna" style="font-size:13px; color:var(--texto-sutil); font-weight:600;">Coluna com o CNPJ:</label>
+      <select id="selectColuna"></select>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2</span> Processar</h2>
+    <p class="hint">A consulta é feita um CNPJ por vez, com um pequeno intervalo entre requisições, respeitando o limite da API pública utilizada (BrasilAPI). Para listas grandes, o processo pode levar alguns minutos — mantenha esta aba aberta.</p>
+    <div class="row">
+      <button class="primary" id="btnProcessar">Consultar CNPJs</button>
+      <button class="secondary" id="btnParar" disabled>Parar</button>
+      <button class="secondary" id="btnDiagnostico" type="button">🔧 Testar conexão com a API</button>
+    </div>
+    <div id="diagnosticoResultado" style="display:none; margin-top:12px; padding:12px 14px; border-radius:8px; font-family:Consolas,monospace; font-size:12.5px; white-space:pre-wrap; line-height:1.6;"></div>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-label" id="progressLabel">0 / 0 consultados</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">3</span> Resultado</h2>
+    <div class="actions-row">
+      <span class="count-pill" id="resultPill">Nenhum resultado ainda</span>
+      <div class="row" style="margin:0;">
+        <button class="secondary" id="btnExportXlsx" disabled>⬇ Baixar Excel (.xlsx)</button>
+        <button class="secondary" id="btnExportCsv" disabled>⬇ Baixar CSV</button>
+      </div>
+    </div>
+    <div class="table-scroll" id="tableScroll">
+      <div class="empty-state">Os resultados aparecerão aqui depois de processar a lista acima.</div>
+    </div>
+  </div>
+
+</main>
+
+<footer>Ferramenta interna — Rede Américas · Reforma Tributária. Consulta em tempo real via BrasilAPI.</footer>
+
+<script>
+(function(){
+
+  // ---------------------------------------------------------------------
+  // Validação de CNPJ (mesma lógica do app desktop: numérico com DV, ou
+  // alfanumérico 14 chars aceito apenas sintaticamente)
+  // ---------------------------------------------------------------------
+  const PESOS_DV1 = [5,4,3,2,9,8,7,6,5,4,3,2];
+  const PESOS_DV2 = [6,5,4,3,2,9,8,7,6,5,4,3,2];
+
+  function limparCnpj(valor){
+    if(valor === null || valor === undefined) return "";
+    let texto = String(valor).trim();
+    // remove caracteres invisíveis comuns em textos colados de PDF/Word/e-mail
+    // (espaço não separável, zero-width space/joiner, BOM, soft hyphen)
+    texto = texto.replace(/[\u00A0\u200B\u200C\u200D\uFEFF\u00AD]/g, "");
+    // normaliza variações de hífen/traço (en dash, em dash, minus sign) para "-"
+    texto = texto.replace(/[\u2010-\u2015\u2212]/g, "-");
+    texto = texto.trim();
+    // trata caso Excel ter salvo como número (ex: 1.1222333000181e+13)
+    if(/^-?\d+\.\d+([eE][+-]?\d+)?$|^-?\d+[eE][+-]?\d+$/.test(texto)){
+      const n = parseFloat(texto);
+      if(!isNaN(n)) texto = n.toFixed(0);
+    }
+    return texto.toUpperCase().replace(/[.\-\/\s]/g,"");
+  }
+
+  function digitoVerificador(numeros, pesos){
+    let soma = 0;
+    for(let i=0;i<numeros.length;i++) soma += parseInt(numeros[i],10) * pesos[i];
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  }
+
+  function validarDV(cnpj14){
+    if(cnpj14.length !== 14 || !/^\d{14}$/.test(cnpj14)) return false;
+    const corpo = cnpj14.slice(0,12);
+    const dv1 = digitoVerificador(corpo, PESOS_DV1);
+    const dv2 = digitoVerificador(corpo + dv1, PESOS_DV2);
+    return cnpj14.slice(12,14) === ("" + dv1 + dv2);
+  }
+
+  function mascararCnpj(cnpj14){
+    return cnpj14.slice(0,2)+"."+cnpj14.slice(2,5)+"."+cnpj14.slice(5,8)+"/"+cnpj14.slice(8,12)+"-"+cnpj14.slice(12,14);
+  }
+
+  function processarCnpj(valorOriginal){
+    const limpo = limparCnpj(valorOriginal);
+    if(!limpo) return {valido:false, padronizado:"", chave:"", alfanumerico:false};
+    if(limpo.length !== 14) return {valido:false, padronizado:limpo, chave:limpo, alfanumerico:false};
+    if(/^\d{14}$/.test(limpo)){
+      if(validarDV(limpo)) return {valido:true, padronizado:mascararCnpj(limpo), chave:limpo, alfanumerico:false};
+      return {valido:false, padronizado:limpo, chave:limpo, alfanumerico:false};
+    }
+    if(/^[A-Z0-9]{14}$/.test(limpo)) return {valido:true, padronizado:limpo, chave:limpo, alfanumerico:true};
+    return {valido:false, padronizado:limpo, chave:limpo, alfanumerico:false};
+  }
+
+  // ---------------------------------------------------------------------
+  // Mapeamentos código -> texto (iguais ao app desktop)
+  // ---------------------------------------------------------------------
+  const SITUACAO_MAP = {"01":"NULA","02":"ATIVA","03":"SUSPENSA","04":"INAPTA","08":"BAIXADA",
+                         "1":"NULA","2":"ATIVA","3":"SUSPENSA","4":"INAPTA","8":"BAIXADA"};
+  const PORTE_MAP = {"00":"NAO_INFORMADO","01":"MICROEMPRESA","03":"EMPRESA_DE_PEQUENO_PORTE","05":"DEMAIS",
+                      "0":"NAO_INFORMADO","1":"MICROEMPRESA","3":"EMPRESA_DE_PEQUENO_PORTE","5":"DEMAIS"};
+
+  function situacaoBadgeClass(txt){
+    if(!txt) return "erro";
+    const t = txt.toUpperCase();
+    if(t.includes("ATIVA")) return "ativa";
+    if(t.includes("BAIXADA")) return "baixada";
+    if(t.includes("INAPTA")) return "inapta";
+    if(t.includes("SUSPENSA")) return "suspensa";
+    if(t.includes("NULA")) return "nula";
+    return "erro";
+  }
+
+  function regimeBadgeClass(txt){
+    if(!txt) return "erro";
+    const t = txt.toUpperCase();
+    if(t.includes("MEI")) return "mei";
+    if(t.includes("SIMPLES")) return "simples";
+    return "naoOptante";
+  }
+
+  const COLUNAS = [
+    "CNPJ_ENVIADO","CNPJ_PADRONIZADO","STATUS_CONSULTA","CNPJ_RETORNADO","CNPJ_RAIZ",
+    "RAZAO_SOCIAL","NOME_FANTASIA",
+    "IDENTIFICADOR_MATRIZ_FILIAL","DESCRICAO_MATRIZ_FILIAL",
+    "REGIME_TRIBUTARIO",
+    "SITUACAO_CADASTRAL_CODIGO","SITUACAO_CADASTRAL_DESCRICAO","DATA_SITUACAO_CADASTRAL",
+    "MOTIVO_SITUACAO_CADASTRAL_CODIGO","MOTIVO_SITUACAO_CADASTRAL_DESCRICAO",
+    "SITUACAO_ESPECIAL","DATA_SITUACAO_ESPECIAL",
+    "DATA_INICIO_ATIVIDADE",
+    "NATUREZA_JURIDICA_CODIGO","NATUREZA_JURIDICA_DESCRICAO",
+    "PORTE_CODIGO","PORTE_DESCRICAO","CAPITAL_SOCIAL",
+    "CNAE_FISCAL_CODIGO","CNAE_FISCAL_DESCRICAO","CNAES_SECUNDARIOS",
+    "OPTANTE_SIMPLES_NACIONAL","DATA_OPCAO_SIMPLES","DATA_EXCLUSAO_SIMPLES",
+    "OPTANTE_MEI","DATA_OPCAO_MEI","DATA_EXCLUSAO_MEI",
+    "TIPO_LOGRADOURO","LOGRADOURO","NUMERO","COMPLEMENTO","BAIRRO","CEP",
+    "MUNICIPIO","CODIGO_MUNICIPIO","CODIGO_MUNICIPIO_IBGE","UF",
+    "PAIS","CODIGO_PAIS","CIDADE_NO_EXTERIOR","ENTE_FEDERATIVO_RESPONSAVEL",
+    "DDD_TELEFONE_1","DDD_TELEFONE_2","DDD_FAX","EMAIL",
+    "QSA_QUANTIDADE_SOCIOS","QSA_SOCIOS"
+  ];
+
+  // Deriva um rótulo único e direto de regime tributário a partir das opções
+  // de Simples/MEI retornadas pela Receita. IMPORTANTE: os Dados Abertos do
+  // CNPJ só informam se a empresa optou por Simples Nacional e/ou MEI — não
+  // informam se as demais empresas são Lucro Presumido ou Lucro Real (esse
+  // dado não é público via CNPJ). Por isso o rótulo para quem não é
+  // optante deixa isso explícito, em vez de arriscar um "Lucro Presumido".
+  function calcularRegimeTributario(optanteMei, optanteSimples){
+    if(optanteMei === true) return "MEI";
+    if(optanteSimples === true) return "Simples Nacional";
+    if(optanteMei === false && optanteSimples === false) return "Não optante (Lucro Presumido/Real — não informado pela Receita)";
+    return "";
+  }
+
+  function fmtData(d){
+    if(!d) return "";
+    // BrasilAPI retorna "YYYY-MM-DD" — exibimos DD/MM/AAAA
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+    if(m) return `${m[3]}/${m[2]}/${m[1]}`;
+    return d;
+  }
+
+  function boolSimNao(v){
+    if(v === true) return "SIM";
+    if(v === false) return "NAO";
+    return "";
+  }
+
+  async function consultarBrasilApi(cnpj14){
+    const url = "https://brasilapi.com.br/api/cnpj/v1/" + cnpj14;
+    const resp = await fetch(url);
+    if(resp.status === 404){
+      return {status:"NAO_ENCONTRADO"};
+    }
+    if(resp.status === 429){
+      throw new Error("RATE_LIMIT");
+    }
+    if(!resp.ok){
+      return {status:"ERRO_API_" + resp.status};
+    }
+    const data = await resp.json();
+    return {status:"OK", data};
+  }
+
+  function montarLinha(cnpjEnviado, resultadoValidacao){
+    const linha = {}; COLUNAS.forEach(c => linha[c] = "");
+    linha.CNPJ_ENVIADO = cnpjEnviado;
+    linha.CNPJ_PADRONIZADO = resultadoValidacao.padronizado;
+    linha.CNPJ_RAIZ = resultadoValidacao.chave ? resultadoValidacao.chave.slice(0,8) : "";
+    return linha;
+  }
+
+  async function processarLista(lista, onProgress, deveParar){
+    const resultados = [];
+    for(let i=0;i<lista.length;i++){
+      if(deveParar()) break;
+      const cnpjOriginal = lista[i];
+      const v = processarCnpj(cnpjOriginal);
+      const linha = montarLinha(cnpjOriginal, v);
+
+      if(!v.valido){
+        linha.STATUS_CONSULTA = v.padronizado ? "CNPJ_INVALIDO" : "CNPJ_VAZIO";
+        resultados.push(linha);
+        onProgress(i+1, lista.length);
+        continue;
+      }
+
+      if(v.alfanumerico){
+        // BrasilAPI ainda não suporta CNPJ alfanumérico no momento de escrita
+        // desta ferramenta — sinalizamos para conferência manual.
+        linha.STATUS_CONSULTA = "ALFANUMERICO_CONSULTAR_MANUALMENTE";
+        resultados.push(linha);
+        onProgress(i+1, lista.length);
+        continue;
+      }
+
+      let tentativa = 0;
+      while(true){
+        try{
+          const r = await consultarBrasilApi(v.chave);
+          if(r.status === "NAO_ENCONTRADO"){
+            linha.STATUS_CONSULTA = "NAO_ENCONTRADO";
+          } else if(r.status === "OK"){
+            const d = r.data;
+            linha.STATUS_CONSULTA = "ENCONTRADO";
+            linha.CNPJ_RETORNADO = d.cnpj || "";
+            linha.RAZAO_SOCIAL = d.razao_social || "";
+            linha.NOME_FANTASIA = d.nome_fantasia || "";
+            linha.IDENTIFICADOR_MATRIZ_FILIAL = d.identificador_matriz_filial ?? "";
+            linha.DESCRICAO_MATRIZ_FILIAL = d.descricao_identificador_matriz_filial || "";
+            linha.SITUACAO_CADASTRAL_CODIGO = d.situacao_cadastral ?? "";
+            linha.SITUACAO_CADASTRAL_DESCRICAO = d.descricao_situacao_cadastral || SITUACAO_MAP[String(d.situacao_cadastral)] || "";
+            linha.DATA_SITUACAO_CADASTRAL = fmtData(d.data_situacao_cadastral);
+            linha.MOTIVO_SITUACAO_CADASTRAL_CODIGO = d.motivo_situacao_cadastral ?? "";
+            linha.MOTIVO_SITUACAO_CADASTRAL_DESCRICAO = d.descricao_motivo_situacao_cadastral || "";
+            linha.SITUACAO_ESPECIAL = d.situacao_especial || "";
+            linha.DATA_SITUACAO_ESPECIAL = fmtData(d.data_situacao_especial);
+            linha.DATA_INICIO_ATIVIDADE = fmtData(d.data_inicio_atividade);
+            linha.NATUREZA_JURIDICA_CODIGO = d.codigo_natureza_juridica ?? "";
+            linha.NATUREZA_JURIDICA_DESCRICAO = d.natureza_juridica || "";
+            linha.PORTE_CODIGO = d.codigo_porte ?? "";
+            linha.PORTE_DESCRICAO = d.descricao_porte || d.porte || PORTE_MAP[String(d.codigo_porte)] || "";
+            linha.CAPITAL_SOCIAL = (d.capital_social !== undefined && d.capital_social !== null) ? d.capital_social : "";
+            linha.CNAE_FISCAL_CODIGO = d.cnae_fiscal ?? "";
+            linha.CNAE_FISCAL_DESCRICAO = d.cnae_fiscal_descricao || "";
+            linha.CNAES_SECUNDARIOS = Array.isArray(d.cnaes_secundarios)
+              ? d.cnaes_secundarios.map(c => `${c.codigo} - ${c.descricao}`).join(" | ")
+              : "";
+            linha.OPTANTE_SIMPLES_NACIONAL = boolSimNao(d.opcao_pelo_simples);
+            linha.DATA_OPCAO_SIMPLES = fmtData(d.data_opcao_pelo_simples);
+            linha.DATA_EXCLUSAO_SIMPLES = fmtData(d.data_exclusao_do_simples);
+            linha.OPTANTE_MEI = boolSimNao(d.opcao_pelo_mei);
+            linha.DATA_OPCAO_MEI = fmtData(d.data_opcao_pelo_mei);
+            linha.DATA_EXCLUSAO_MEI = fmtData(d.data_exclusao_do_mei);
+            linha.REGIME_TRIBUTARIO = calcularRegimeTributario(d.opcao_pelo_mei, d.opcao_pelo_simples);
+            linha.TIPO_LOGRADOURO = d.descricao_tipo_de_logradouro || "";
+            linha.LOGRADOURO = d.logradouro || "";
+            linha.NUMERO = d.numero || "";
+            linha.COMPLEMENTO = d.complemento || "";
+            linha.BAIRRO = d.bairro || "";
+            linha.CEP = d.cep || "";
+            linha.MUNICIPIO = d.municipio || "";
+            linha.CODIGO_MUNICIPIO = d.codigo_municipio ?? "";
+            linha.CODIGO_MUNICIPIO_IBGE = d.codigo_municipio_ibge ?? "";
+            linha.UF = d.uf || "";
+            linha.PAIS = d.pais || "";
+            linha.CODIGO_PAIS = d.codigo_pais ?? "";
+            linha.CIDADE_NO_EXTERIOR = d.nome_cidade_no_exterior || "";
+            linha.ENTE_FEDERATIVO_RESPONSAVEL = d.ente_federativo_responsavel || "";
+            linha.DDD_TELEFONE_1 = d.ddd_telefone_1 || "";
+            linha.DDD_TELEFONE_2 = d.ddd_telefone_2 || "";
+            linha.DDD_FAX = d.ddd_fax || "";
+            linha.EMAIL = d.email || "";
+            const socios = Array.isArray(d.qsa) ? d.qsa : [];
+            linha.QSA_QUANTIDADE_SOCIOS = socios.length;
+            linha.QSA_SOCIOS = socios
+              .map(s => `${s.nome_socio || ""}${s.qualificacao_socio ? " (" + s.qualificacao_socio + ")" : ""}`)
+              .filter(Boolean)
+              .join(" | ");
+          } else {
+            linha.STATUS_CONSULTA = r.status;
+          }
+          break;
+        } catch(e){
+          tentativa++;
+          if(e.message === "RATE_LIMIT" && tentativa <= 3){
+            await sleep(1500 * tentativa);
+            continue;
+          }
+          // guarda o motivo real do erro (ex: "Failed to fetch" costuma indicar
+          // bloqueio de rede/CORS/proxy corporativo, não um problema do CNPJ em si)
+          const motivo = (e && e.message) ? e.message : String(e);
+          const dicaFile = (window.location.protocol === "file:" && motivo.includes("Failed to fetch"))
+            ? " (provável restrição do navegador por a página estar aberta via arquivo local — publique em http/https, ex: SharePoint)"
+            : "";
+          linha.STATUS_CONSULTA = "ERRO_CONSULTA: " + motivo + dicaFile;
+          break;
+        }
+      }
+
+      resultados.push(linha);
+      onProgress(i+1, lista.length);
+      await sleep(260); // intervalo entre requisições
+    }
+    return resultados;
+  }
+
+  function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+  // ---------------------------------------------------------------------
+  // Extração de CNPJs do texto ou da planilha enviada
+  // ---------------------------------------------------------------------
+  function extrairDaTextarea(texto){
+    return texto.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+  }
+
+  const CANDIDATOS_COLUNA = ["CNPJ","CNPJ_ENVIADO","CNPJ CLIENTE","CNPJ_FORNECEDOR","DOCUMENTO"];
+
+  function detectarColunaCnpj(headers){
+    const norm = h => String(h).trim().toUpperCase().replace(/[\s_]+/g," ");
+    const alvo = CANDIDATOS_COLUNA.map(norm);
+    for(const h of headers){ if(alvo.includes(norm(h))) return h; }
+    return headers[0];
+  }
+
+  function lerPlanilha(workbook){
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet, {defval:""});
+    const headers = json.length ? Object.keys(json[0]) : [];
+    return {rows: json, headers};
+  }
+
+  function valoresDaColuna(rows, coluna){
+    return rows.map(row => String(row[coluna] ?? "").trim()).filter(Boolean);
+  }
+
+  // ---------------------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------------------
+  const txtCnpjs = document.getElementById("txtCnpjs");
+  const fileInput = document.getElementById("fileInput");
+  const fileNameEl = document.getElementById("fileName");
+  const countPill = document.getElementById("countPill");
+  const colunaRow = document.getElementById("colunaRow");
+  const selectColuna = document.getElementById("selectColuna");
+  const btnProcessar = document.getElementById("btnProcessar");
+  const btnLimpar = document.getElementById("btnLimpar");
+  const btnParar = document.getElementById("btnParar");
+  const btnDiagnostico = document.getElementById("btnDiagnostico");
+  const diagnosticoResultado = document.getElementById("diagnosticoResultado");
+  const progressWrap = document.getElementById("progressWrap");
+  const progressBar = document.getElementById("progressBar");
+  const progressLabel = document.getElementById("progressLabel");
+  const tableScroll = document.getElementById("tableScroll");
+  const resultPill = document.getElementById("resultPill");
+  const btnExportXlsx = document.getElementById("btnExportXlsx");
+  const btnExportCsv = document.getElementById("btnExportCsv");
+
+  let planilhaAtual = null; // {rows, headers}
+  let ultimosResultados = [];
+  let pararSolicitado = false;
+
+  function listaAtual(){
+    return extrairDaTextarea(txtCnpjs.value);
+  }
+
+  function atualizarContagem(){
+    const n = listaAtual().length;
+    countPill.textContent = n + " CNPJ(s) detectado(s)";
+  }
+
+  function preencherTextareaComColuna(coluna){
+    if(!planilhaAtual) return;
+    const valores = valoresDaColuna(planilhaAtual.rows, coluna);
+    txtCnpjs.value = valores.join("\n");
+    atualizarContagem();
+  }
+
+  txtCnpjs.addEventListener("input", atualizarContagem);
+
+  selectColuna.addEventListener("change", () => {
+    preencherTextareaComColuna(selectColuna.value);
+  });
+
+  btnLimpar.addEventListener("click", () => {
+    txtCnpjs.value = "";
+    fileInput.value = "";
+    fileNameEl.textContent = "";
+    colunaRow.style.display = "none";
+    selectColuna.innerHTML = "";
+    planilhaAtual = null;
+    ultimosResultados = [];
+    resultPill.textContent = "Nenhum resultado ainda";
+    btnExportXlsx.disabled = true;
+    btnExportCsv.disabled = true;
+    progressWrap.style.display = "none";
+    tableScroll.innerHTML = '<div class="empty-state">Os resultados aparecerão aqui depois de processar a lista acima.</div>';
+    atualizarContagem();
+  });
+
+  fileInput.addEventListener("change", (ev) => {
+    const file = ev.target.files[0];
+    if(!file) return;
+    fileNameEl.textContent = "Lendo " + file.name + "...";
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try{
+        const wb = XLSX.read(e.target.result, {type:"array"});
+        planilhaAtual = lerPlanilha(wb);
+        if(planilhaAtual.headers.length === 0){
+          fileNameEl.textContent = `${file.name} — nenhuma linha encontrada`;
+          colunaRow.style.display = "none";
+          return;
+        }
+        selectColuna.innerHTML = planilhaAtual.headers
+          .map(h => `<option value="${h.replace(/"/g,'&quot;')}">${h}</option>`)
+          .join("");
+        const colunaDetectada = detectarColunaCnpj(planilhaAtual.headers);
+        selectColuna.value = colunaDetectada;
+        colunaRow.style.display = "flex";
+        fileNameEl.textContent = `${file.name} — ${planilhaAtual.rows.length} linha(s)`;
+        preencherTextareaComColuna(colunaDetectada);
+      } catch(err){
+        fileNameEl.textContent = "Erro ao ler o arquivo: " + err.message;
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  btnProcessar.addEventListener("click", async () => {
+    const lista = listaAtual();
+    if(lista.length === 0){
+      alert("Informe ao menos um CNPJ (colando na caixa de texto ou enviando uma planilha).");
+      return;
+    }
+    pararSolicitado = false;
+    btnProcessar.disabled = true;
+    btnParar.disabled = false;
+    btnExportXlsx.disabled = true;
+    btnExportCsv.disabled = true;
+    progressWrap.style.display = "block";
+    progressBar.style.width = "0%";
+    progressLabel.textContent = `0 / ${lista.length} consultados`;
+    tableScroll.innerHTML = '<div class="empty-state">Consultando...</div>';
+
+    const resultados = await processarLista(
+      lista,
+      (feito, total) => {
+        const pct = Math.round((feito/total)*100);
+        progressBar.style.width = pct + "%";
+        progressLabel.textContent = `${feito} / ${total} consultados`;
+      },
+      () => pararSolicitado
+    );
+
+    ultimosResultados = resultados;
+    renderizarTabela(resultados);
+    resultPill.textContent = `${resultados.length} resultado(s)`;
+    btnProcessar.disabled = false;
+    btnParar.disabled = true;
+    btnExportXlsx.disabled = resultados.length === 0;
+    btnExportCsv.disabled = resultados.length === 0;
+  });
+
+  btnParar.addEventListener("click", () => {
+    pararSolicitado = true;
+    btnParar.disabled = true;
+  });
+
+  btnDiagnostico.addEventListener("click", async () => {
+    diagnosticoResultado.style.display = "block";
+    diagnosticoResultado.style.background = "#f4f1f5";
+    diagnosticoResultado.style.color = "#2b2530";
+    diagnosticoResultado.textContent = "Rodando diagnóstico...";
+
+    const linhas = [];
+    linhas.push(`Endereço da página: ${window.location.href}`);
+    linhas.push(`Protocolo: ${window.location.protocol}`);
+    linhas.push(`Navegador (user agent): ${navigator.userAgent}`);
+    linhas.push("");
+
+    // Teste 1: fetch normal (o mesmo que a ferramenta usa)
+    linhas.push("→ Teste 1: chamando a BrasilAPI (CNPJ de exemplo: Ministério da Fazenda)...");
+    let teste1ok = false;
+    try{
+      const resp = await fetch("https://brasilapi.com.br/api/cnpj/v1/00394460005887");
+      teste1ok = true;
+      linhas.push(`   Resposta recebida! HTTP ${resp.status} ${resp.statusText}`);
+      if(resp.ok){
+        const data = await resp.json();
+        linhas.push(`   razao_social retornada: ${data.razao_social || "(vazio)"}`);
+        linhas.push("   ✅ A conexão com a BrasilAPI está funcionando neste navegador.");
+      } else {
+        linhas.push("   ⚠️ A API respondeu, mas com um status de erro.");
+      }
+    } catch(e){
+      linhas.push(`   ❌ FALHOU — tipo: ${e.name || "?"} | mensagem: ${e.message || e}`);
+    }
+
+    linhas.push("");
+    // Teste 2: outra API pública qualquer, para saber se é algo específico da BrasilAPI
+    // ou um bloqueio geral a chamadas externas nesta página/rede
+    linhas.push("→ Teste 2: chamando outra API pública (viacep.com.br), para comparar...");
+    try{
+      const resp2 = await fetch("https://viacep.com.br/ws/01310930/json/");
+      linhas.push(`   Resposta recebida! HTTP ${resp2.status}`);
+      linhas.push("   ✅ Chamadas a APIs externas em geral funcionam nesta página.");
+    } catch(e2){
+      linhas.push(`   ❌ FALHOU também — tipo: ${e2.name || "?"} | mensagem: ${e2.message || e2}`);
+      linhas.push("   → Isso sugere um bloqueio GERAL a chamadas externas nesta página (não é específico da BrasilAPI).");
+    }
+
+    linhas.push("");
+    if(window.location.protocol === "file:"){
+      linhas.push("⚠️ Esta página está aberta via file:// (arquivo local). Publique-a em um servidor http/https (ex: SharePoint) e teste de novo antes de tirar conclusões.");
+    }
+    linhas.push("Se os dois testes falharam com 'Failed to fetch': abra o Console do navegador (F12 → aba Console) e veja se aparece a palavra 'CORS', 'blocked', 'ERR_BLOCKED_BY_CLIENT' (extensão/adblock) ou 'ERR_CONNECTION' (rede/proxy/antivírus) — isso identifica a causa exata.");
+
+    diagnosticoResultado.textContent = linhas.join("\n");
+    diagnosticoResultado.style.background = teste1ok ? "#e6f6d9" : "#fbe1e4";
+  });
+
+  function renderizarTabela(resultados){
+    if(resultados.length === 0){
+      tableScroll.innerHTML = '<div class="empty-state">Nenhum resultado.</div>';
+      return;
+    }
+    const cols = COLUNAS;
+    let html = "<table><thead><tr>";
+    cols.forEach(c => html += `<th>${c.replace(/_/g," ")}</th>`);
+    html += "</tr></thead><tbody>";
+    resultados.forEach(linha => {
+      html += "<tr>";
+      cols.forEach(c => {
+        if(c === "SITUACAO_CADASTRAL_DESCRICAO"){
+          const cls = situacaoBadgeClass(linha[c]);
+          html += `<td>${linha[c] ? `<span class="badge ${cls}">${linha[c]}</span>` : ""}</td>`;
+        } else if(c === "REGIME_TRIBUTARIO"){
+          const cls = regimeBadgeClass(linha[c]);
+          html += `<td>${linha[c] ? `<span class="badge ${cls}">${linha[c]}</span>` : ""}</td>`;
+        } else if(c === "STATUS_CONSULTA"){
+          const ok = linha[c] === "ENCONTRADO";
+          html += `<td><span class="badge ${ok ? "ativa" : "erro"}">${linha[c]}</span></td>`;
+        } else {
+          html += `<td>${(linha[c] ?? "").toString().replace(/</g,"&lt;")}</td>`;
+        }
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+    tableScroll.innerHTML = html;
+  }
+
+  function baixarArquivo(blob, nomeArquivo){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = nomeArquivo;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  btnExportXlsx.addEventListener("click", () => {
+    if(ultimosResultados.length === 0) return;
+    const dados = ultimosResultados.map(l => {
+      const o = {};
+      COLUNAS.forEach(c => o[c] = l[c]);
+      return o;
+    });
+    const ws = XLSX.utils.json_to_sheet(dados, {header:COLUNAS});
+    // força colunas de CNPJ/CEP como texto para não virar notação científica
+    const colunasTexto = ["CNPJ_ENVIADO","CNPJ_PADRONIZADO","CNPJ_RETORNADO","CNPJ_RAIZ","CEP","CNAE_FISCAL_CODIGO"];
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    for(let R = range.s.r + 1; R <= range.e.r; R++){
+      COLUNAS.forEach((col, C) => {
+        if(colunasTexto.includes(col)){
+          const addr = XLSX.utils.encode_cell({r:R, c:C});
+          if(ws[addr]) ws[addr].t = "s";
+        }
+      });
+    }
+    ws["!cols"] = COLUNAS.map(() => ({wch:20}));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Enriquecimento CNPJ");
+    XLSX.writeFile(wb, "enriquecimento_cnpj.xlsx");
+  });
+
+  btnExportCsv.addEventListener("click", () => {
+    if(ultimosResultados.length === 0) return;
+    const linhas = [COLUNAS.join(";")];
+    ultimosResultados.forEach(l => {
+      linhas.push(COLUNAS.map(c => `"${String(l[c] ?? "").replace(/"/g,'""')}"`).join(";"));
+    });
+    const blob = new Blob(["\uFEFF" + linhas.join("\r\n")], {type:"text/csv;charset=utf-8;"});
+    baixarArquivo(blob, "enriquecimento_cnpj.csv");
+  });
+
+  atualizarContagem();
+})();
+</script>
+</body>
+</html>
