@@ -147,8 +147,16 @@
 
   <div class="card">
     <h2><span class="step">2</span> Processar</h2>
-    <p class="hint">A consulta é feita um CNPJ por vez, com um pequeno intervalo entre requisições, respeitando o limite da API pública utilizada (BrasilAPI). Para listas grandes, o processo pode levar alguns minutos — mantenha esta aba aberta.</p>
+    <p class="hint">A consulta é feita um CNPJ por vez, com um pequeno intervalo entre requisições, respeitando o limite das APIs públicas. No modo Automático, se uma fonte (BrasilAPI, OpenCNPJ, CNPJá) estiver bloqueada na sua rede, a ferramenta passa sozinha para a próxima. Para listas grandes, o processo pode levar alguns minutos — mantenha esta aba aberta.</p>
     <div class="row">
+      <label style="font-size:13px; color:var(--texto-sutil); font-weight:600; display:flex; align-items:center; gap:8px;">Fonte
+        <select id="selectFonte" style="border:1px solid var(--borda); border-radius:8px; padding:7px 10px; font-size:13px;">
+          <option value="AUTO">Automático (tenta todas)</option>
+          <option value="BrasilAPI">BrasilAPI</option>
+          <option value="OpenCNPJ">OpenCNPJ</option>
+          <option value="CNPJá">CNPJá (lenta — 5/min)</option>
+        </select>
+      </label>
       <button class="primary" id="btnProcessar">Consultar CNPJs</button>
       <button class="secondary" id="btnParar" disabled>Parar</button>
       <button class="secondary" id="btnDiagnostico" type="button">🔧 Testar conexão com a API</button>
@@ -176,7 +184,7 @@
 
 </main>
 
-<footer>Ferramenta interna — Rede Américas · Reforma Tributária. Consulta em tempo real via BrasilAPI.</footer>
+<footer>Ferramenta interna — Rede Américas · Reforma Tributária. Consulta em tempo real via BrasilAPI / OpenCNPJ / CNPJá.</footer>
 
 <script>
 (function(){
@@ -264,7 +272,7 @@
   }
 
   const COLUNAS = [
-    "CNPJ_ENVIADO","CNPJ_PADRONIZADO","STATUS_CONSULTA","CNPJ_RETORNADO","CNPJ_RAIZ",
+    "CNPJ_ENVIADO","CNPJ_PADRONIZADO","STATUS_CONSULTA","FONTE_CONSULTA","CNPJ_RETORNADO","CNPJ_RAIZ",
     "RAZAO_SOCIAL","NOME_FANTASIA",
     "IDENTIFICADOR_MATRIZ_FILIAL","DESCRICAO_MATRIZ_FILIAL",
     "REGIME_TRIBUTARIO",
@@ -291,9 +299,10 @@
   // dado não é público via CNPJ). Por isso o rótulo para quem não é
   // optante deixa isso explícito, em vez de arriscar um "Lucro Presumido".
   function calcularRegimeTributario(optanteMei, optanteSimples){
-    if(optanteMei === true) return "MEI";
-    if(optanteSimples === true) return "Simples Nacional";
-    if(optanteMei === false && optanteSimples === false) return "Não optante (Lucro Presumido/Real — não informado pela Receita)";
+    const mei = boolSimNao(optanteMei), simples = boolSimNao(optanteSimples);
+    if(mei === "SIM") return "MEI";
+    if(simples === "SIM") return "Simples Nacional";
+    if(mei === "NAO" && simples === "NAO") return "Não optante (Lucro Presumido/Real — não informado pela Receita)";
     return "";
   }
 
@@ -308,23 +317,138 @@
   function boolSimNao(v){
     if(v === true) return "SIM";
     if(v === false) return "NAO";
+    const t = String(v ?? "").trim().toUpperCase();
+    if(["S","SIM","TRUE","1"].includes(t)) return "SIM";
+    if(["N","NAO","NÃO","FALSE","0"].includes(t)) return "NAO";
     return "";
   }
 
-  async function consultarBrasilApi(cnpj14){
-    const url = "https://brasilapi.com.br/api/cnpj/v1/" + cnpj14;
-    const resp = await fetch(url);
-    if(resp.status === 404){
-      return {status:"NAO_ENCONTRADO"};
+  async function fetchComTimeout(url, timeoutMs = 12000){
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try{
+      return await fetch(url, {signal: controller.signal, headers:{"Accept":"application/json"}, cache:"no-store"});
+    } finally { clearTimeout(timer); }
+  }
+
+  // Todas as fontes são convertidas para o formato da BrasilAPI, que é o que o
+  // restante da ferramenta (montagem das colunas) já entende.
+  function normalizarOpenCnpj(d){
+    const tels = Array.isArray(d.telefones) ? d.telefones : [];
+    const normais = tels.filter(t => !t.is_fax), fax = tels.find(t => t.is_fax);
+    const tel = t => t ? `${t.ddd || ""}${t.numero || ""}` : "";
+    const matriz = String(d.matriz_filial || "").toLowerCase().includes("matriz");
+    const capital = typeof d.capital_social === "string"
+      ? parseFloat(d.capital_social.replace(/\./g,"").replace(",", ".")) : d.capital_social;
+    const socios = Array.isArray(d.QSA) ? d.QSA : (Array.isArray(d.qsa) ? d.qsa : []);
+    const sec = Array.isArray(d.cnaes_secundarios) ? d.cnaes_secundarios : [];
+    return {
+      cnpj: d.cnpj || "",
+      razao_social: d.razao_social, nome_fantasia: d.nome_fantasia,
+      identificador_matriz_filial: matriz ? 1 : 2,
+      descricao_identificador_matriz_filial: d.matriz_filial || (matriz ? "MATRIZ" : "FILIAL"),
+      descricao_situacao_cadastral: d.situacao_cadastral || "",
+      data_situacao_cadastral: d.data_situacao_cadastral,
+      descricao_motivo_situacao_cadastral: d.motivo_situacao_cadastral || "",
+      situacao_especial: d.situacao_especial || "", data_situacao_especial: d.data_situacao_especial,
+      data_inicio_atividade: d.data_inicio_atividade,
+      codigo_natureza_juridica: d.codigo_natureza_juridica ?? "",
+      natureza_juridica: d.natureza_juridica || "",
+      descricao_porte: d.porte_empresa || "",
+      capital_social: isNaN(capital) ? "" : capital,
+      cnae_fiscal: d.cnae_principal || "",
+      cnae_fiscal_descricao: d.cnae_principal_descricao || "",
+      cnaes_secundarios: sec.map(c => typeof c === "object" ? c : {codigo:c, descricao:""}),
+      opcao_pelo_simples: d.opcao_simples, data_opcao_pelo_simples: d.data_opcao_simples,
+      opcao_pelo_mei: d.opcao_mei, data_opcao_pelo_mei: d.data_opcao_mei,
+      descricao_tipo_de_logradouro: d.tipo_logradouro || "",
+      logradouro: d.logradouro, numero: d.numero, complemento: d.complemento,
+      bairro: d.bairro, cep: d.cep, municipio: d.municipio, uf: d.uf,
+      codigo_municipio_ibge: d.codigo_municipio_ibge ?? d.codigo_ibge ?? "",
+      ddd_telefone_1: tel(normais[0]), ddd_telefone_2: tel(normais[1]), ddd_fax: tel(fax),
+      email: d.email || "",
+      qsa: socios.map(q => ({nome_socio: q.nome_socio || q.nome || "", qualificacao_socio: q.qualificacao_socio || ""}))
+    };
+  }
+
+  function normalizarCnpja(d){
+    const c = d.company || {}, a = d.address || {};
+    const phones = Array.isArray(d.phones) ? d.phones : [];
+    const normais = phones.filter(p => p.type !== "FAX"), fax = phones.find(p => p.type === "FAX");
+    const tel = p => p ? `${p.area || ""}${p.number || ""}` : "";
+    return {
+      cnpj: d.taxId || "",
+      razao_social: c.name || "", nome_fantasia: d.alias || "",
+      identificador_matriz_filial: d.head ? 1 : 2,
+      descricao_identificador_matriz_filial: d.head ? "MATRIZ" : "FILIAL",
+      situacao_cadastral: d.status ? d.status.id : "",
+      descricao_situacao_cadastral: d.status ? d.status.text : "",
+      data_situacao_cadastral: d.statusDate,
+      motivo_situacao_cadastral: d.reason ? d.reason.id : "",
+      descricao_motivo_situacao_cadastral: d.reason ? d.reason.text : "",
+      situacao_especial: d.special ? d.special.text : "", data_situacao_especial: d.specialDate,
+      data_inicio_atividade: d.founded,
+      codigo_natureza_juridica: c.nature ? c.nature.id : "",
+      natureza_juridica: c.nature ? c.nature.text : "",
+      codigo_porte: c.size ? c.size.id : "", descricao_porte: c.size ? c.size.text : "",
+      capital_social: c.equity ?? "",
+      cnae_fiscal: d.mainActivity ? d.mainActivity.id : "",
+      cnae_fiscal_descricao: d.mainActivity ? d.mainActivity.text : "",
+      cnaes_secundarios: (d.sideActivities || []).map(x => ({codigo:x.id, descricao:x.text})),
+      opcao_pelo_simples: c.simples ? c.simples.optant : undefined,
+      data_opcao_pelo_simples: c.simples ? c.simples.since : "",
+      opcao_pelo_mei: c.simei ? c.simei.optant : undefined,
+      data_opcao_pelo_mei: c.simei ? c.simei.since : "",
+      logradouro: a.street, numero: a.number, complemento: a.details, bairro: a.district,
+      cep: a.zip, municipio: a.city, uf: a.state, codigo_municipio_ibge: a.municipality ?? "",
+      pais: a.country ? a.country.name : "", codigo_pais: a.country ? a.country.id : "",
+      ddd_telefone_1: tel(normais[0]), ddd_telefone_2: tel(normais[1]), ddd_fax: tel(fax),
+      email: (d.emails && d.emails[0]) ? d.emails[0].address : "",
+      qsa: (c.members || []).map(m => ({nome_socio: m.person ? m.person.name : "", qualificacao_socio: m.role ? m.role.text : ""}))
+    };
+  }
+
+  // Fontes públicas em ordem de preferência. Se uma estiver bloqueada pela rede
+  // (ex: "Failed to fetch"), a ferramenta passa sozinha para a próxima.
+  const FONTES = [
+    {nome:"BrasilAPI", url: c => "https://brasilapi.com.br/api/cnpj/v1/" + c, normalizar: d => d},
+    {nome:"OpenCNPJ",  url: c => "https://api.opencnpj.org/" + c,             normalizar: normalizarOpenCnpj},
+    {nome:"CNPJá",     url: c => "https://open.cnpja.com/office/" + c,        normalizar: normalizarCnpja}
+  ];
+  let fontePreferida = 0;
+  const fontesComFalha = new Set();
+
+  function fontesHabilitadas(){
+    const sel = document.getElementById("selectFonte");
+    const escolha = sel ? sel.value : "AUTO";
+    if(escolha !== "AUTO") return FONTES.filter(f => f.nome === escolha);
+    const ordem = [FONTES[fontePreferida], ...FONTES.filter((_,i) => i !== fontePreferida)];
+    return [...ordem.filter(f => !fontesComFalha.has(f.nome)), ...ordem.filter(f => fontesComFalha.has(f.nome))];
+  }
+
+  async function consultarCnpj(cnpj14){
+    const erros = [];
+    let houveRateLimit = false;
+    for(const fonte of fontesHabilitadas()){
+      try{
+        const resp = await fetchComTimeout(fonte.url(cnpj14));
+        if(resp.status === 404){
+          fontePreferida = FONTES.indexOf(fonte);
+          return {status:"NAO_ENCONTRADO", fonte:fonte.nome};
+        }
+        if(resp.status === 429){ houveRateLimit = true; erros.push(`${fonte.nome}: limite de requisições`); continue; }
+        if(!resp.ok){ erros.push(`${fonte.nome}: HTTP ${resp.status}`); continue; }
+        const data = await resp.json();
+        fontePreferida = FONTES.indexOf(fonte);
+        fontesComFalha.delete(fonte.nome);
+        return {status:"OK", data: fonte.normalizar(data), fonte: fonte.nome};
+      } catch(e){
+        fontesComFalha.add(fonte.nome);
+        erros.push(`${fonte.nome}: ${e && e.name === "AbortError" ? "tempo limite" : ((e && e.message) || "falha de rede")}`);
+      }
     }
-    if(resp.status === 429){
-      throw new Error("RATE_LIMIT");
-    }
-    if(!resp.ok){
-      return {status:"ERRO_API_" + resp.status};
-    }
-    const data = await resp.json();
-    return {status:"OK", data};
+    if(houveRateLimit) throw new Error("RATE_LIMIT");
+    throw new Error(erros.join(" | ") || "nenhuma fonte disponível");
   }
 
   function montarLinha(cnpjEnviado, resultadoValidacao){
@@ -362,13 +486,14 @@
       let tentativa = 0;
       while(true){
         try{
-          const r = await consultarBrasilApi(v.chave);
+          const r = await consultarCnpj(v.chave);
+          linha.FONTE_CONSULTA = r.fonte || "";
           if(r.status === "NAO_ENCONTRADO"){
             linha.STATUS_CONSULTA = "NAO_ENCONTRADO";
           } else if(r.status === "OK"){
             const d = r.data;
             linha.STATUS_CONSULTA = "ENCONTRADO";
-            linha.CNPJ_RETORNADO = d.cnpj || "";
+            linha.CNPJ_RETORNADO = String(d.cnpj || "").replace(/\D/g,"");
             linha.RAZAO_SOCIAL = d.razao_social || "";
             linha.NOME_FANTASIA = d.nome_fantasia || "";
             linha.IDENTIFICADOR_MATRIZ_FILIAL = d.identificador_matriz_filial ?? "";
@@ -389,7 +514,7 @@
             linha.CNAE_FISCAL_CODIGO = d.cnae_fiscal ?? "";
             linha.CNAE_FISCAL_DESCRICAO = d.cnae_fiscal_descricao || "";
             linha.CNAES_SECUNDARIOS = Array.isArray(d.cnaes_secundarios)
-              ? d.cnaes_secundarios.map(c => `${c.codigo} - ${c.descricao}`).join(" | ")
+              ? d.cnaes_secundarios.filter(c => c && c.codigo).map(c => c.descricao ? `${c.codigo} - ${c.descricao}` : String(c.codigo)).join(" | ")
               : "";
             linha.OPTANTE_SIMPLES_NACIONAL = boolSimNao(d.opcao_pelo_simples);
             linha.DATA_OPCAO_SIMPLES = fmtData(d.data_opcao_pelo_simples);
@@ -579,6 +704,8 @@
       return;
     }
     pararSolicitado = false;
+    fontesComFalha.clear();
+    fontePreferida = 0;
     btnProcessar.disabled = true;
     btnParar.disabled = false;
     btnExportXlsx.disabled = true;
@@ -624,42 +751,41 @@
     linhas.push(`Navegador (user agent): ${navigator.userAgent}`);
     linhas.push("");
 
-    // Teste 1: fetch normal (o mesmo que a ferramenta usa)
-    linhas.push("→ Teste 1: chamando a BrasilAPI (CNPJ de exemplo: Ministério da Fazenda)...");
-    let teste1ok = false;
-    try{
-      const resp = await fetch("https://brasilapi.com.br/api/cnpj/v1/00394460005887");
-      teste1ok = true;
-      linhas.push(`   Resposta recebida! HTTP ${resp.status} ${resp.statusText}`);
-      if(resp.ok){
-        const data = await resp.json();
-        linhas.push(`   razao_social retornada: ${data.razao_social || "(vazio)"}`);
-        linhas.push("   ✅ A conexão com a BrasilAPI está funcionando neste navegador.");
-      } else {
-        linhas.push("   ⚠️ A API respondeu, mas com um status de erro.");
+    const fontesOk = [];
+    for(let i=0;i<FONTES.length;i++){
+      const f = FONTES[i];
+      linhas.push(`→ Teste ${i+1}: ${f.nome} (CNPJ de exemplo: Petrobras 33000167000101)...`);
+      try{
+        const resp = await fetchComTimeout(f.url("33000167000101"));
+        linhas.push(`   Resposta recebida! HTTP ${resp.status} ${resp.statusText}`);
+        if(resp.ok){
+          const data = f.normalizar(await resp.json());
+          linhas.push(`   razao_social: ${data.razao_social || "(vazio)"}`);
+          linhas.push("   ✅ Funciona neste navegador.");
+          fontesOk.push(f.nome);
+        } else linhas.push("   ⚠️ A API respondeu, mas com status de erro.");
+      } catch(e){
+        linhas.push(`   ❌ FALHOU — ${e.name || "?"}: ${e.message || e}`);
       }
-    } catch(e){
-      linhas.push(`   ❌ FALHOU — tipo: ${e.name || "?"} | mensagem: ${e.message || e}`);
+      linhas.push("");
     }
-
-    linhas.push("");
-    // Teste 2: outra API pública qualquer, para saber se é algo específico da BrasilAPI
-    // ou um bloqueio geral a chamadas externas nesta página/rede
-    linhas.push("→ Teste 2: chamando outra API pública (viacep.com.br), para comparar...");
+    linhas.push(`→ Teste ${FONTES.length+1}: ViaCEP (controle — verifica bloqueio geral)...`);
     try{
-      const resp2 = await fetch("https://viacep.com.br/ws/01310930/json/");
-      linhas.push(`   Resposta recebida! HTTP ${resp2.status}`);
-      linhas.push("   ✅ Chamadas a APIs externas em geral funcionam nesta página.");
-    } catch(e2){
-      linhas.push(`   ❌ FALHOU também — tipo: ${e2.name || "?"} | mensagem: ${e2.message || e2}`);
-      linhas.push("   → Isso sugere um bloqueio GERAL a chamadas externas nesta página (não é específico da BrasilAPI).");
+      const r3 = await fetchComTimeout("https://viacep.com.br/ws/01310930/json/");
+      linhas.push(`   Resposta recebida! HTTP ${r3.status}`);
+      if(r3.ok) linhas.push("   ✅ Chamadas externas em geral funcionam nesta página.");
+    } catch(e3){
+      linhas.push(`   ❌ FALHOU — ${e3.name || "?"}: ${e3.message || e3}`);
+      linhas.push("   → Bloqueio geral da rede/proxy a chamadas externas.");
     }
-
     linhas.push("");
     if(window.location.protocol === "file:"){
-      linhas.push("⚠️ Esta página está aberta via file:// (arquivo local). Publique-a em um servidor http/https (ex: SharePoint) e teste de novo antes de tirar conclusões.");
+      linhas.push("⚠️ Página aberta via file:// — publique em http/https e teste de novo.");
     }
-    linhas.push("Se os dois testes falharam com 'Failed to fetch': abra o Console do navegador (F12 → aba Console) e veja se aparece a palavra 'CORS', 'blocked', 'ERR_BLOCKED_BY_CLIENT' (extensão/adblock) ou 'ERR_CONNECTION' (rede/proxy/antivírus) — isso identifica a causa exata.");
+    linhas.push(fontesOk.length
+      ? `RESULTADO: pode consultar normalmente (modo Automático usará ${fontesOk[0]}). Funcionando: ${fontesOk.join(", ")}.`
+      : "RESULTADO: nenhuma fonte de CNPJ respondeu. A rede/antivírus/adblock está bloqueando esses domínios. Teste em outra rede (ex: 4G) ou peça à TI liberação de brasilapi.com.br e api.opencnpj.org.");
+    const teste1ok = fontesOk.length > 0;
 
     diagnosticoResultado.textContent = linhas.join("\n");
     diagnosticoResultado.style.background = teste1ok ? "#e6f6d9" : "#fbe1e4";
